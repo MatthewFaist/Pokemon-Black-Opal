@@ -66,3 +66,9 @@ tools/aif2pcm/aif2pcm
 *.smolTM
 __pycache__
 .map_version
+
+# Project reference docs/assets (not part of the ROM hack source)
+/CLAUDE.md
+/Map/
+/*.docx
+/Veland.png
