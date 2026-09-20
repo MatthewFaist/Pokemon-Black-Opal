@@ -72,3 +72,6 @@ __pycache__
 /Map/
 /*.docx
 /Veland.png
+
+# Local build output logs
+*.log
