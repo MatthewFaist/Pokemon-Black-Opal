@@ -15,6 +15,7 @@ enum FieldMoveUnlockType
     CANT_UNLOCK,
     ALWAYS_UNLOCKED,
     BADGE_UNLOCK,
+    ITEM_UNLOCK,
     FIELD_MOVE_UNLOCK_COUNT
 };
 
@@ -26,7 +27,11 @@ struct FieldMoveInfo
     u32 partyMsgID:7;
     u32 arg:8;
     u32 hideIfLocked:1;
-    u32 padding:3;
+    // Black Opal: for field moves with no corresponding TM/HM item to gate
+    // on (Teleport, Milk Drink, Soft-Boiled, Sweet Scent), fall back to the
+    // original vanilla behavior of requiring the move to actually be known.
+    u32 requiresKnownMove:1;
+    u32 padding:2;
 };
 
 extern const struct FieldMoveInfo gFieldMoveInfo[];
@@ -60,6 +65,11 @@ static inline u32 FieldMove_GetPartyMsgID(enum FieldMove fieldMove)
 static inline bool32 FieldMove_IsVisible(enum FieldMove fieldMove)
 {
     return !gFieldMoveInfo[fieldMove].hideIfLocked || IsFieldMoveUnlocked(fieldMove);
+}
+
+static inline bool32 FieldMove_RequiresKnownMove(enum FieldMove fieldMove)
+{
+    return gFieldMoveInfo[fieldMove].requiresKnownMove;
 }
 
 #endif //GUARD_FIELD_MOVE_H

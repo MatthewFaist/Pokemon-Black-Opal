@@ -194,6 +194,10 @@ enum Gender
 #define OPTIONS_TEXT_SPEED_MID 1
 #define OPTIONS_TEXT_SPEED_FAST 2
 #define OPTIONS_TEXT_SPEED_INSTANT 3
+// Black Opal: Heart & Soul-style FASTER speed (2 characters per frame).
+// SLOW and INSTANT are kept as engine values (the dev instant-text
+// override and old saves still use them) but are no longer in the menu.
+#define OPTIONS_TEXT_SPEED_FASTER 4
 
 #define OPTIONS_SOUND_MONO 0
 #define OPTIONS_SOUND_STEREO 1

@@ -23,6 +23,7 @@
 #define tSound data[4]
 #define tButtonMode data[5]
 #define tWindowFrameType data[6]
+#define tAutoRun data[7]
 
 enum
 {
@@ -32,6 +33,7 @@ enum
     MENUITEM_SOUND,
     MENUITEM_BUTTONMODE,
     MENUITEM_FRAMETYPE,
+    MENUITEM_AUTORUN,
     MENUITEM_CANCEL,
     MENUITEM_COUNT,
 };
@@ -42,12 +44,16 @@ enum
     WIN_OPTIONS
 };
 
-#define YPOS_TEXTSPEED    (MENUITEM_TEXTSPEED * 16)
-#define YPOS_BATTLESCENE  (MENUITEM_BATTLESCENE * 16)
-#define YPOS_BATTLESTYLE  (MENUITEM_BATTLESTYLE * 16)
-#define YPOS_SOUND        (MENUITEM_SOUND * 16)
-#define YPOS_BUTTONMODE   (MENUITEM_BUTTONMODE * 16)
-#define YPOS_FRAMETYPE    (MENUITEM_FRAMETYPE * 16)
+// Black Opal: row spacing reduced from 16 to 14px so the added Auto Run
+// row (8 items total) still fits within the original, unresized options
+// window (8 * 14 = 112px, matching the window's original 14-tile height).
+#define YPOS_TEXTSPEED    (MENUITEM_TEXTSPEED * 14)
+#define YPOS_BATTLESCENE  (MENUITEM_BATTLESCENE * 14)
+#define YPOS_BATTLESTYLE  (MENUITEM_BATTLESTYLE * 14)
+#define YPOS_SOUND        (MENUITEM_SOUND * 14)
+#define YPOS_BUTTONMODE   (MENUITEM_BUTTONMODE * 14)
+#define YPOS_FRAMETYPE    (MENUITEM_FRAMETYPE * 14)
+#define YPOS_AUTORUN      (MENUITEM_AUTORUN * 14)
 
 static void Task_OptionMenuFadeIn(u8 taskId);
 static void Task_OptionMenuProcessInput(u8 taskId);
@@ -66,6 +72,8 @@ static u8 FrameType_ProcessInput(u8 selection);
 static void FrameType_DrawChoices(u8 selection);
 static u8 ButtonMode_ProcessInput(u8 selection);
 static void ButtonMode_DrawChoices(u8 selection);
+static u8 AutoRun_ProcessInput(u8 selection);
+static void AutoRun_DrawChoices(u8 selection);
 static void DrawHeaderText(void);
 static void DrawOptionMenuTexts(void);
 static void DrawBgWindowFrames(void);
@@ -73,9 +81,41 @@ static void DrawBgWindowFrames(void);
 EWRAM_DATA static bool8 sArrowPressed = FALSE;
 
 static const u8 gText_Option[]             = _("OPTION");
-static const u8 gText_TextSpeedSlow[]      = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}SLOW");
 static const u8 gText_TextSpeedMid[]       = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}MID");
 static const u8 gText_TextSpeedFast[]      = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}FAST");
+static const u8 gText_TextSpeedFaster[]    = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}FASTER");
+
+// Black Opal: the menu shows three choices (MID / FAST / FASTER). The task
+// tracks the choice index 0-2; these convert to and from the engine's
+// OPTIONS_TEXT_SPEED_* values when loading and saving.
+enum
+{
+    TEXT_SPEED_CHOICE_MID,
+    TEXT_SPEED_CHOICE_FAST,
+    TEXT_SPEED_CHOICE_FASTER,
+    TEXT_SPEED_CHOICE_COUNT,
+};
+
+static const u8 sTextSpeedChoiceToOption[TEXT_SPEED_CHOICE_COUNT] =
+{
+    [TEXT_SPEED_CHOICE_MID]    = OPTIONS_TEXT_SPEED_MID,
+    [TEXT_SPEED_CHOICE_FAST]   = OPTIONS_TEXT_SPEED_FAST,
+    [TEXT_SPEED_CHOICE_FASTER] = OPTIONS_TEXT_SPEED_FASTER,
+};
+
+static u8 TextSpeedOptionToChoice(u8 option)
+{
+    switch (option)
+    {
+    case OPTIONS_TEXT_SPEED_FAST:
+        return TEXT_SPEED_CHOICE_FAST;
+    case OPTIONS_TEXT_SPEED_FASTER:
+    case OPTIONS_TEXT_SPEED_INSTANT: // legacy value from an older save
+        return TEXT_SPEED_CHOICE_FASTER;
+    default: // MID, or legacy SLOW
+        return TEXT_SPEED_CHOICE_MID;
+    }
+}
 static const u8 gText_BattleSceneOn[]      = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}ON");
 static const u8 gText_BattleSceneOff[]     = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}OFF");
 static const u8 gText_BattleStyleShift[]   = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}SHIFT");
@@ -100,6 +140,7 @@ static const u8 *const sOptionMenuItemsNames[MENUITEM_COUNT] =
     [MENUITEM_SOUND]       = COMPOUND_STRING("SOUND"),
     [MENUITEM_BUTTONMODE]  = COMPOUND_STRING("BUTTON MODE"),
     [MENUITEM_FRAMETYPE]   = COMPOUND_STRING("FRAME"),
+    [MENUITEM_AUTORUN]     = COMPOUND_STRING("AUTO RUN"),
     [MENUITEM_CANCEL]      = COMPOUND_STRING("CANCEL"),
 };
 
@@ -244,12 +285,13 @@ void CB2_InitOptionMenu(void)
         u8 taskId = CreateTask(Task_OptionMenuFadeIn, 0);
 
         gTasks[taskId].tMenuSelection = 0;
-        gTasks[taskId].tTextSpeed = gSaveBlock2Ptr->optionsTextSpeed;
+        gTasks[taskId].tTextSpeed = TextSpeedOptionToChoice(gSaveBlock2Ptr->optionsTextSpeed);
         gTasks[taskId].tBattleSceneOff = gSaveBlock2Ptr->optionsBattleSceneOff;
         gTasks[taskId].tBattleStyle = gSaveBlock2Ptr->optionsBattleStyle;
         gTasks[taskId].tSound = gSaveBlock2Ptr->optionsSound;
         gTasks[taskId].tButtonMode = gSaveBlock2Ptr->optionsButtonMode;
         gTasks[taskId].tWindowFrameType = gSaveBlock2Ptr->optionsWindowFrameType;
+        gTasks[taskId].tAutoRun = gSaveBlock2Ptr->optionsAutoRun;
 
         TextSpeed_DrawChoices(gTasks[taskId].tTextSpeed);
         BattleScene_DrawChoices(gTasks[taskId].tBattleSceneOff);
@@ -257,6 +299,7 @@ void CB2_InitOptionMenu(void)
         Sound_DrawChoices(gTasks[taskId].tSound);
         ButtonMode_DrawChoices(gTasks[taskId].tButtonMode);
         FrameType_DrawChoices(gTasks[taskId].tWindowFrameType);
+        AutoRun_DrawChoices(gTasks[taskId].tAutoRun);
         HighlightOptionMenuItem(gTasks[taskId].tMenuSelection);
 
         CopyWindowToVram(WIN_OPTIONS, COPYWIN_FULL);
@@ -352,6 +395,13 @@ static void Task_OptionMenuProcessInput(u8 taskId)
             if (previousOption != gTasks[taskId].tWindowFrameType)
                 FrameType_DrawChoices(gTasks[taskId].tWindowFrameType);
             break;
+        case MENUITEM_AUTORUN:
+            previousOption = gTasks[taskId].tAutoRun;
+            gTasks[taskId].tAutoRun = AutoRun_ProcessInput(gTasks[taskId].tAutoRun);
+
+            if (previousOption != gTasks[taskId].tAutoRun)
+                AutoRun_DrawChoices(gTasks[taskId].tAutoRun);
+            break;
         default:
             return;
         }
@@ -366,12 +416,13 @@ static void Task_OptionMenuProcessInput(u8 taskId)
 
 static void Task_OptionMenuSave(u8 taskId)
 {
-    gSaveBlock2Ptr->optionsTextSpeed = gTasks[taskId].tTextSpeed;
+    gSaveBlock2Ptr->optionsTextSpeed = sTextSpeedChoiceToOption[gTasks[taskId].tTextSpeed];
     gSaveBlock2Ptr->optionsBattleSceneOff = gTasks[taskId].tBattleSceneOff;
     gSaveBlock2Ptr->optionsBattleStyle = gTasks[taskId].tBattleStyle;
     gSaveBlock2Ptr->optionsSound = gTasks[taskId].tSound;
     gSaveBlock2Ptr->optionsButtonMode = gTasks[taskId].tButtonMode;
     gSaveBlock2Ptr->optionsWindowFrameType = gTasks[taskId].tWindowFrameType;
+    gSaveBlock2Ptr->optionsAutoRun = gTasks[taskId].tAutoRun;
 
     BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
     gTasks[taskId].func = Task_OptionMenuFadeOut;
@@ -390,7 +441,14 @@ static void Task_OptionMenuFadeOut(u8 taskId)
 static void HighlightOptionMenuItem(u8 index)
 {
     SetGpuReg(REG_OFFSET_WIN0H, WIN_RANGE(16, DISPLAY_WIDTH - 16));
-    SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE(index * 16 + 40, index * 16 + 56));
+    // Black Opal: row stride is compressed to 14px (see YPOS macros above)
+    // to fit 8 rows in the original window, but FONT_NORMAL's real glyph
+    // height is 15px (sMenuCursorDimensions[FONT_NORMAL] = {8,15}) -- a
+    // 14px-tall box was cutting off the bottom of the glyph, making the
+    // highlight look shifted up. Box height stays 15 (matching the real
+    // glyph), only its start position follows the compressed 14px stride;
+    // adjacent boxes overlap by 1px, which isn't visually noticeable.
+    SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE(index * 14 + 40, index * 14 + 55));
 }
 
 static void DrawOptionMenuChoice(const u8 *text, u8 x, u8 y, u8 style)
@@ -415,7 +473,7 @@ static u8 TextSpeed_ProcessInput(u8 selection)
 {
     if (JOY_NEW(DPAD_RIGHT))
     {
-        if (selection <= 1)
+        if (selection < TEXT_SPEED_CHOICE_COUNT - 1)
             selection++;
         else
             selection = 0;
@@ -427,7 +485,7 @@ static u8 TextSpeed_ProcessInput(u8 selection)
         if (selection != 0)
             selection--;
         else
-            selection = 2;
+            selection = TEXT_SPEED_CHOICE_COUNT - 1;
 
         sArrowPressed = TRUE;
     }
@@ -436,25 +494,25 @@ static u8 TextSpeed_ProcessInput(u8 selection)
 
 static void TextSpeed_DrawChoices(u8 selection)
 {
-    u8 styles[3];
-    s32 widthSlow, widthMid, widthFast, xMid;
+    u8 styles[TEXT_SPEED_CHOICE_COUNT] = {0};
+    s32 widthMid, widthFast, widthFaster, xMid, xFaster, xFast;
 
-    styles[0] = 0;
-    styles[1] = 0;
-    styles[2] = 0;
     styles[selection] = 1;
 
-    DrawOptionMenuChoice(gText_TextSpeedSlow, 104, YPOS_TEXTSPEED, styles[0]);
-
-    widthSlow = GetStringWidth(FONT_NORMAL, gText_TextSpeedSlow, 0);
     widthMid = GetStringWidth(FONT_NORMAL, gText_TextSpeedMid, 0);
     widthFast = GetStringWidth(FONT_NORMAL, gText_TextSpeedFast, 0);
+    widthFaster = GetStringWidth(FONT_NORMAL, gText_TextSpeedFaster, 0);
 
-    widthMid -= 94;
-    xMid = (widthSlow - widthMid - widthFast) / 2 + 104;
-    DrawOptionMenuChoice(gText_TextSpeedMid, xMid, YPOS_TEXTSPEED, styles[1]);
+    // MID starts at x=104 like the first choice on every other row, FASTER
+    // is right-aligned to 198 like every other row's last choice, and FAST
+    // is centered in the gap between them, all from measured label widths.
+    xMid = 104;
+    xFaster = 198 - widthFaster;
+    xFast = ((xMid + widthMid) + xFaster) / 2 - widthFast / 2;
 
-    DrawOptionMenuChoice(gText_TextSpeedFast, GetStringRightAlignXOffset(FONT_NORMAL, gText_TextSpeedFast, 198), YPOS_TEXTSPEED, styles[2]);
+    DrawOptionMenuChoice(gText_TextSpeedMid, xMid, YPOS_TEXTSPEED, styles[TEXT_SPEED_CHOICE_MID]);
+    DrawOptionMenuChoice(gText_TextSpeedFast, xFast, YPOS_TEXTSPEED, styles[TEXT_SPEED_CHOICE_FAST]);
+    DrawOptionMenuChoice(gText_TextSpeedFaster, xFaster, YPOS_TEXTSPEED, styles[TEXT_SPEED_CHOICE_FASTER]);
 }
 
 static u8 BattleScene_ProcessInput(u8 selection)
@@ -631,6 +689,33 @@ static void ButtonMode_DrawChoices(u8 selection)
     DrawOptionMenuChoice(gText_ButtonTypeLEqualsA, GetStringRightAlignXOffset(FONT_NORMAL, gText_ButtonTypeLEqualsA, 198), YPOS_BUTTONMODE, styles[2]);
 }
 
+// Black Opal: Auto-Run toggle. NOTE: unlike BattleScene (whose save field
+// is an "Off" flag, so selection 0 = ON is correct there), our field
+// (optionsAutoRun) means "is enabled" directly -- so OFF is drawn/selected
+// at index 0 and ON at index 1, keeping selection value == stored meaning.
+static u8 AutoRun_ProcessInput(u8 selection)
+{
+    if (JOY_NEW(DPAD_LEFT | DPAD_RIGHT))
+    {
+        selection ^= 1;
+        sArrowPressed = TRUE;
+    }
+
+    return selection;
+}
+
+static void AutoRun_DrawChoices(u8 selection)
+{
+    u8 styles[2];
+
+    styles[0] = 0;
+    styles[1] = 0;
+    styles[selection] = 1;
+
+    DrawOptionMenuChoice(gText_BattleSceneOff, 104, YPOS_AUTORUN, styles[0]);
+    DrawOptionMenuChoice(gText_BattleSceneOn, GetStringRightAlignXOffset(FONT_NORMAL, gText_BattleSceneOn, 198), YPOS_AUTORUN, styles[1]);
+}
+
 static void DrawHeaderText(void)
 {
     FillWindowPixelBuffer(WIN_HEADER, PIXEL_FILL(1));
@@ -644,7 +729,7 @@ static void DrawOptionMenuTexts(void)
 
     FillWindowPixelBuffer(WIN_OPTIONS, PIXEL_FILL(1));
     for (i = 0; i < MENUITEM_COUNT; i++)
-        AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sOptionMenuItemsNames[i], 8, (i * 16) + 1, TEXT_SKIP_DRAW, NULL);
+        AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sOptionMenuItemsNames[i], 8, (i * 14) + 1, TEXT_SKIP_DRAW, NULL);
     CopyWindowToVram(WIN_OPTIONS, COPYWIN_FULL);
 }
 
